@@ -1,6 +1,7 @@
 import Head from "next/head";
 import styles from "../styles/Home.module.css";
-import providers, { Contract } from "ethers";
+import { formatEther } from "ethers/lib/utils";
+import { Contract, providers } from "ethers";
 import { useEffect, useRef, useState } from "react";
 import Web3Modal from "web3modal";
 import {
@@ -13,7 +14,11 @@ import {
 export default function Home() {
   const [treasuryBalance, setTreasuryBalance] = useState("0");
   const [nftBalance, setNftBalance] = useState(0);
+  const [proposals, setProposals] = useState([]);
   const [numProposals, setNumProposals] = useState("0");
+  const [fakeNftTokenId, setFakeNftTokenId] = useState("");
+  const [selectedTab, setSelectedTab] = useState("");
+  const [loading, setLoading] = useState(false);
   const [walletConnected, setWalletConnected] = useState(false);
   const web3ModalRef = useRef();
 
@@ -57,6 +62,85 @@ export default function Home() {
       setNumProposals(daoNumProposals.toString());
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const createProposal = async () => {
+    try {
+      const signer = await getProviderOrSigner(true);
+      const daoContract = getDaoContractInstance(signer);
+      const tx = await daoContract.createProposal(fakeNftTokenId);
+      setLoading(true);
+      await tx.wait();
+      await getNumProposalsInDAO();
+      setLoading(false);
+    } catch (error) {
+      console.error(error);
+      window.alert(error.data.message);
+    }
+  };
+
+  const fetchProposalById = async (id) => {
+    try {
+      const provider = await getProviderOrSigner();
+      const daoContract = getDaoContractInstance(provider);
+      const proposal = await daoContract.proposals(id);
+      const parsedProposal = {
+        proposalId: id,
+        nftTokenId: proposal.nftTokenId.toString(),
+        deadline: new Date(parseInt(proposal.deadline.toString()) * 1000),
+        yayVotes: proposal.yayvotes.toString(),
+        nayVotes: proposal.nayvotes.toString(),
+        executed: proposal.executed,
+      };
+      return parsedProposal;
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const fetchAllProposals = async () => {
+    try {
+      const proposals = [];
+      for (let i = 0; i < numProposals; i++) {
+        const proposal = await fetchProposalById(i);
+        proposals.push(proposal);
+      }
+      setProposals(proposals);
+      return proposals;
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const voteOnProposal = async (proposalId, _vote) => {
+    try {
+      const signer = await getProviderOrSigner(true);
+      const daoContract = getDaoContractInstance(signer);
+      let vote = _vote === "YAY" ? 0 : 1;
+      const tx = await daoContract.voteOnProposal(proposalId, vote);
+      setLoading(true);
+      await tx.wait();
+      setLoading(false);
+      await fetchAllProposals();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.data.message);
+    }
+  };
+
+  const executeProposal = async (proposalId) => {
+    try {
+      const signer = await getProviderOrSigner(true);
+      const daoContract = getDaoContractInstance(signer);
+      const tx = await daoContract.executeProposal(proposalId);
+      setLoading(true);
+      await tx.wait();
+      setLoading(false);
+      await fetchAllProposals();
+    } catch (error) {
+      console.error(error);
+      window.alert(error.data.message);
     }
   };
 
@@ -109,25 +193,149 @@ export default function Home() {
     }
   }, [walletConnected]);
 
+  useEffect(() => {
+    if (selectedTab === "View Proposals") {
+      fetchAllProposals();
+    }
+  }, [selectedTab]);
+
+  function renderTabs() {
+    if (selectedTab === "Create Proposal") {
+      return renderCreateProposalTab();
+    } else if (selectedTab === "View Proposals") {
+      return renderViewProposalsTab();
+    }
+    return null;
+  }
+
+  function renderCreateProposalTab() {
+    if (loading) {
+      return (
+        <div className={styles.description}>
+          Loading... Waiting for transaction..
+        </div>
+      );
+    } else if (nftBalance === 0) {
+      return (
+        <div className={styles.description}>
+          You do not own any CryptoDevs NFT. <br />
+          <b>You cannot create or vote on proposals</b>
+        </div>
+      );
+    } else {
+      return (
+        <div className={styles.container}>
+          <label>Fake NFT token ID to purchase: </label>
+          <input
+            placeholder="0"
+            type="number"
+            onChange={(e) => setFakeNftTokenId(e.target.value)}
+          />
+          <button className={styles.button2} onClick={createProposal}>
+            Create
+          </button>
+        </div>
+      );
+    }
+  }
+
+  function renderViewProposalsTab() {
+    if (loading) {
+      return (
+        <div className={styles.description}>
+          Loading.. waiting for transaction..
+        </div>
+      );
+    } else if (proposals.length === 0) {
+      return (
+        <div className={styles.description}>No Proposals have been created</div>
+      );
+    } else {
+      return (
+        <div>
+          {proposals.map((p, index) => (
+            <div key={index} className={styles.proposalCard}>
+              <p>Proposal ID: {p.proposalId}</p>
+              <p>Fake NFT to purchase: {p.nftTokenId}</p>
+              <p>Deadline: {p.deadline.toLocaleString()}</p>
+              <p>Yay Votes: {p.yayVotes}</p>
+              <p>Nay Votes: {p.nayVotes}</p>
+              <p>Executed? : {p.executed.toString()}</p>
+              {p.deadline.getTime() > Date.now() && !p.executed ? (
+                <div className={styles.flex}>
+                  <button
+                    className={styles.button2}
+                    onClick={() => voteOnProposal(p.proposalId, "YAY")}
+                  >
+                    Vote YAY
+                  </button>
+                  <button
+                    className={styles.description}
+                    onClick={() => voteOnProposal(p.proposalId, "NAY")}
+                  >
+                    Vote NAY
+                  </button>
+                </div>
+              ) : p.deadline.getTime() < Date.now() && !p.executed ? (
+                <div className={styles.flex}>
+                  <button
+                    className={styles.button2}
+                    onClick={() => executeProposal(p.proposalId)}
+                  >
+                    Execute Proposal{" "}
+                    {p.yayVotes > p.nayVotes ? "(YAY)" : "(NAY)"}
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.description}>Proposal Executed </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+  }
+
   return (
     <div>
       <Head>
-        <title>CryptoDevs DAO</title>
-        <meta name="description" content="CryptoDevs DAO" />
+        <title>CryptoFunk DAO</title>
+        <meta name="description" content="CryptoFunk DAO" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <div className={styles.main}>
         <div>
-          <h1 className={styles.title}>Welcome to Crypto Devs!</h1>
+          <h1 className={styles.title}>Welcome to Crypto Funks!</h1>
           <div className={styles.description}>Welcome to the DAO!</div>
           <div className={styles.description}>
-            Your CryptoDevs NFT Balance: {nftBalance} <br />
+            Your Crypto Funks NFT Balance: {nftBalance} <br />
             Treasury Balance: {formatEther(treasuryBalance)} ETH <br />
             Total Number of Proposals: {numProposals}
           </div>
+          <div className={styles.flex}>
+            <button
+              className={styles.button}
+              onClick={() => setSelectedTab("Create Proposal")}
+            >
+              Create Proposal
+            </button>
+            <button
+              className={styles.button}
+              onClick={() => setSelectedTab("View Proposals")}
+            >
+              View Proposals
+            </button>
+          </div>
+          {renderTabs()}
+        </div>
+        <div>
+          <img className={styles.image} src="./cryptodevs/0.svg" />
         </div>
       </div>
+      <footer className={styles.footer}>
+        Made with &#10084; by Dixit Tilaji.
+      </footer>
     </div>
   );
 }

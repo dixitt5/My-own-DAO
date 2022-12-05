@@ -50,10 +50,10 @@
   border: none;
   color: #ffffff;
   font-size: 15px;
+  width: 200px;
   padding: 10px;
   cursor: pointer;
   margin-right: 2%;
-  margin-top: 1rem;
 }
 
 .proposalCard {

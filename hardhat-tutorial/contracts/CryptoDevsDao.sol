@@ -115,7 +115,7 @@ contract CryptoDevsDao is Ownable {
         if (proposal.yayvotes > proposal.nayvotes) {
             uint256 nftPrice = nftMarketplace.getPrice();
             require(address(this).balance >= nftPrice, "Not enough funds");
-            nftMarketplace.purchase(proposal.nftTokenId);
+            nftMarketplace.purchase{value: nftPrice}(proposal.nftTokenId);
         }
 
         proposal.executed = true;
